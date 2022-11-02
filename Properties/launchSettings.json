@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Compiler": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\Users\\sonya\\source\\repos\\Compiler\\bup.txt -la"
+    }
+  }
+}
