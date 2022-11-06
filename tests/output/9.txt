@@ -1,0 +1,2 @@
+1 1 Keyword sTRiNg sTRiNg
+1 7 EOF EOF EOF

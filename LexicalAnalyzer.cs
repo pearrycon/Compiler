@@ -6,9 +6,9 @@ using System.IO;
 
 public class LexicalAnalyzer
 {
-    private readonly char[] delimiters = { ';', ',' };
-    private readonly char[] opersigns = { '+', '-', '*', '=', '|', '!' };
-    private readonly string[] keywords = {"abs", "absoluteand", "arctan", "array", "as", "asm", "begin", "boolean", "break",
+    private readonly char[] delimiters = { ':', ';', ',', '(', ')', '[', ']' };
+    private readonly char[] opersigns = { '+', '-', '*', '=', '@', '^', '>', '<' };
+    private readonly string[] keywords = {"abs", "absolute", "and", "arctan", "array", "as", "asm", "begin", "boolean", "break",
         "case", "char", "class", "const", "constructor", "continue", "cos", "destructor", "dispose", "div", "do", "downto",
         "else", "end", "eof", "eoln", "except", "exp", "exports", "false", "file", "finalization","finally", "for", "function",
         "goto", "if", "implementation", "in", "inherited", "initialization", "inline", "input", "integer", "interface", "is",
@@ -16,7 +16,7 @@ public class LexicalAnalyzer
         "output", "pack", "packed", "page", "pred", "procedure", "program", "property", "raise", "read", "readln", "real",
         "record", "reintroduce", "repeat", "reset", "rewrite", "round", "self", "set", "shl", "shr", "sin", "sqr", "sqrt",
         "string", "succ", "text", "then", "threadvar", "to", "true", "trunc", "try", "type", "unit", "until", "uses", "var",
-        "while", "with", "write", "writelnxor"};
+        "while", "with", "write", "writelnxor", "xor"};
 
     private enum States : int
     {
@@ -30,23 +30,22 @@ public class LexicalAnalyzer
         strliter = 6,       // строковые литералы
         integer = 7,        // целые числа
         real = 8,           // вещественные числа
-        shortcomment = 9,   // однострочные комментарии
-        longcomment = 10,   // многострочные комментарии
     };
 
     public LexicalAnalyzer(string path)
-	{
+    {
         input = File.OpenText(path);
-	}
+    }
 
     private StreamReader input;
     private int CharInd = 0;
     private int LineInd = 1;
     private string Str = "";
     private string StrVal = "";
+    private string ErrMsg = "";
     private int IntVal = -1;
     private double DoubleVal = -1.0;
-    private char LastChar = ' ';
+    private int LastChar = ' ';
 
     public string GetLexemType(int st)
     {
@@ -61,8 +60,6 @@ public class LexicalAnalyzer
             6 => "String",
             7 => "Integer",
             8 => "Real",
-            9 => "Single line comment",
-            10 => "Multiple lines comment",
             _ => "Error",
         };
     }
@@ -71,9 +68,9 @@ public class LexicalAnalyzer
     {
         if (StrVal.Length > 0) return StrVal;
         else if (IntVal != -1) return IntVal.ToString();
-        else if (DoubleVal != -1.0) return DoubleVal.ToString();
-        else if (input.EndOfStream) return "EOF";
-        else return LastChar.ToString();
+        else if (DoubleVal != -1.0) return DoubleVal.ToString().Replace(',', '.');
+        else if (LastChar == -1) return "EOF";
+        else return ((char)LastChar).ToString();
     }
 
     public int GetLexemState()
@@ -83,6 +80,8 @@ public class LexicalAnalyzer
         IntVal = -1;
         DoubleVal = -1.0;
 
+        if (LastChar == -1) return (int)States.eof;
+
         do
         {
             if (LastChar.Equals('\n'))
@@ -90,15 +89,14 @@ public class LexicalAnalyzer
                 LineInd++;
                 CharInd = 0;
             }
-            LastChar = (char)input.Read();
+            LastChar = input.Read();
             CharInd++;
         }
-        while (char.IsWhiteSpace(LastChar) && !input.EndOfStream);
+        while (LastChar != -1 && char.IsWhiteSpace((char)LastChar));
 
+        if (LastChar == -1) return (int)States.eof;
 
-        if (input.EndOfStream) return (int)States.eof;
-
-        Str = string.Concat(Str, LastChar.ToString());
+        Str += (char)LastChar;
 
         foreach (char ch in delimiters)
         {
@@ -110,12 +108,12 @@ public class LexicalAnalyzer
             if (LastChar.Equals(ch)) return (int)States.opersign;
         }
 
-        if (char.IsLetter(LastChar) || LastChar == '_')
+        if (char.IsLetter((char)LastChar) || LastChar == '_')
         {
             while (char.IsLetterOrDigit((char)input.Peek()) || input.Peek().Equals('_'))
             {
-                LastChar = (char)input.Read();
-                Str = string.Concat(Str, LastChar.ToString());
+                LastChar = input.Read();
+                Str += (char)LastChar;
             }
             StrVal = Str;
             CharInd += Str.Length - 1;
@@ -129,11 +127,11 @@ public class LexicalAnalyzer
 
         if (LastChar.Equals('\''))
         {
-            while (!(LastChar = (char)input.Read()).Equals('\''))
+            while (!(LastChar = input.Read()).Equals('\''))
             {
-                Str = string.Concat(Str, LastChar.ToString());
+                Str += (char)LastChar;
             }
-            Str = string.Concat(Str, LastChar.ToString());
+            Str += (char)LastChar;
             StrVal = Str[1..^1];
             CharInd += Str.Length - 1;
             return (int)States.strliter;
@@ -141,42 +139,39 @@ public class LexicalAnalyzer
 
         if (LastChar.Equals('/'))
         {
-            if (input.Peek().Equals('/')) {
+            if (input.Peek().Equals('/'))
+            {
                 do
                 {
-                    LastChar = (char)input.Read();
-                    Str = string.Concat(Str, LastChar.ToString());
-                } while (!input.Peek().Equals('\n'));
-                CharInd += Str.Length - 1;
-                StrVal = Str[2..^0];
-                return (int)States.shortcomment;
+                    LastChar = input.Read();
+                    CharInd++;
+                } while (!input.Peek().Equals('\n') && input.Peek() != -1);
+                return GetLexemState();
             }
             else return (int)States.opersign;
         }
 
         if (LastChar.Equals('{'))
         {
-            while (!(LastChar = (char)input.Read()).Equals('}'))
+            while (!(LastChar = input.Read()).Equals('}'))
             {
                 CharInd++;
-                Str = string.Concat(Str, LastChar.ToString());
                 if (LastChar.Equals('\n'))
                 {
                     LineInd++;
                     CharInd = 0;
                 }
             }
-            Str = string.Concat(Str, LastChar.ToString());
-            StrVal = Str[1..^1];
-            return (int)States.longcomment;
+            CharInd++;
+            return GetLexemState();
         }
 
         if (LastChar.Equals('$'))
         {
             while (char.IsLetterOrDigit((char)input.Peek()))
             {
-                LastChar = (char)input.Read();
-                Str = string.Concat(Str, LastChar.ToString());
+                LastChar = input.Read();
+                Str += (char)LastChar;
             }
             try
             {
@@ -184,12 +179,12 @@ public class LexicalAnalyzer
             }
             catch (FormatException)
             {
-                Console.WriteLine(string.Format("({0}, {1}): The number does not match the Hexadecimal format.", LineInd, CharInd));
+                ErrMsg = string.Format("({0}, {1}): The number does not match the Hexadecimal format.", LineInd, CharInd);
                 return -1;
             }
             catch (OverflowException)
             {
-                Console.WriteLine(string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd));
+                ErrMsg = string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd);
                 return -1;
             }
             CharInd += Str.Length - 1;
@@ -200,8 +195,8 @@ public class LexicalAnalyzer
         {
             while (char.IsLetterOrDigit((char)input.Peek()))
             {
-                LastChar = (char)input.Read();
-                Str = string.Concat(Str, LastChar.ToString());
+                LastChar = input.Read();
+                Str += (char)LastChar;
             }
             try
             {
@@ -209,12 +204,12 @@ public class LexicalAnalyzer
             }
             catch (FormatException)
             {
-                Console.WriteLine(string.Format("({0}, {1}): The number does not match the octal notation.", LineInd, CharInd));
+                ErrMsg = string.Format("({0}, {1}): The number does not match the octal notation.", LineInd, CharInd);
                 return -1;
             }
             catch (OverflowException)
             {
-                Console.WriteLine(string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd));
+                ErrMsg = string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd);
                 return -1;
             }
             CharInd += Str.Length - 1;
@@ -225,8 +220,8 @@ public class LexicalAnalyzer
         {
             while (char.IsLetterOrDigit((char)input.Peek()))
             {
-                LastChar = (char)input.Read();
-                Str = string.Concat(Str, LastChar.ToString());
+                LastChar = input.Read();
+                Str += (char)LastChar;
             }
             try
             {
@@ -234,39 +229,40 @@ public class LexicalAnalyzer
             }
             catch (FormatException)
             {
-                Console.WriteLine(string.Format("({0}, {1}): The number does not match the binary notation.", LineInd, CharInd));
+                ErrMsg = string.Format("({0}, {1}): The number does not match the binary notation.", LineInd, CharInd);
                 return -1;
             }
             catch (OverflowException)
             {
-                Console.WriteLine(string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd));
+                ErrMsg = string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd);
                 return -1;
             }
             CharInd += Str.Length - 1;
             return (int)States.integer;
         }
 
-        if (char.IsDigit(LastChar))
+        if (char.IsDigit((char)LastChar))
         {
-            while (char.IsLetterOrDigit((char)input.Peek()) || input.Peek().Equals('.'))
+            while (char.IsLetterOrDigit((char)input.Peek()) || input.Peek().Equals('.')
+                    || input.Peek().Equals('-') || input.Peek().Equals('+'))
             {
-                LastChar = (char)input.Read();
-                Str = string.Concat(Str, LastChar.ToString());
+                LastChar = input.Read();
+                Str += (char)LastChar;
             }
             if (Str.Contains('.'))
             {
                 try
                 {
-                    DoubleVal = Convert.ToDouble(Str);
+                    DoubleVal = Convert.ToDouble(Str, CultureInfo.InvariantCulture);
                 }
                 catch (FormatException)
                 {
-                    Console.WriteLine(string.Format("({0}, {1}): The number does not match the real notation.", LineInd, CharInd));
+                    ErrMsg = string.Format("({0}, {1}): The number does not match the real notation.", LineInd, CharInd);
                     return -1;
                 }
                 catch (OverflowException)
                 {
-                    Console.WriteLine(string.Format("({0}, {1}): Overflow in string to double conversion.", LineInd, CharInd));
+                    ErrMsg = string.Format("({0}, {1}): Overflow in string to double conversion.", LineInd, CharInd);
                     return -1;
                 }
                 CharInd += Str.Length - 1;
@@ -280,19 +276,19 @@ public class LexicalAnalyzer
                 }
                 catch (FormatException)
                 {
-                    Console.WriteLine(string.Format("({0}, {1}): The number does not match the normal decimal format.", LineInd, CharInd));
+                    ErrMsg = string.Format("({0}, {1}): The number does not match the normal decimal format.", LineInd, CharInd);
                     return -1;
                 }
                 catch (OverflowException)
                 {
-                    Console.WriteLine(string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd));
+                    ErrMsg = string.Format("({0}, {1}): Overflow in string to int conversion.", LineInd, CharInd);
                     return -1;
                 }
                 CharInd += Str.Length - 1;
                 return (int)States.integer;
-            }            
+            }
         }
-
+        ErrMsg = string.Format("({0}, {1}): Unexpected lexem.", LineInd, CharInd);
         return (int)States.error;
     }
 
@@ -300,21 +296,21 @@ public class LexicalAnalyzer
     {
         int st = GetLexemState();
         if (st == -1) return null;
-        string ans = LineInd.ToString() + " " + (CharInd - Str.Length + 1).ToString() + " " + GetLexemType(st) + " " + GetLexemValue();
-        return string.Concat(ans, " ", Str);
+        int dif = Str.Length > 0 ? Str.Length - 1 : 0;
+        string ans = LineInd.ToString() + " " + (CharInd - dif).ToString() + " " + GetLexemType(st) + " " + GetLexemValue();
+        return st == (int)States.eof ? string.Concat(ans, " EOF") : string.Concat(ans, " ", Str);
     }
 
     public string GetAllLexems()
     {
-
         string ans = "";
         string lex = "";
-        while (!input.EndOfStream)
+        while (LastChar != -1)
         {
             lex = GetLexem();
             if (lex != null) ans = string.Concat(ans, lex, "\n");
             else break;
         }
-        return ans;
+        return lex == null ? ErrMsg : ans.Trim();
     }
 }

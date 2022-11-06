@@ -1,0 +1,4 @@
+1 1 Operation sign / /
+1 2 Identifier asd asd
+1 5 Operation sign / /
+1 6 EOF EOF EOF
